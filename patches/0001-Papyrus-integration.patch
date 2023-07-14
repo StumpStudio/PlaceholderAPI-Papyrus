@@ -1,0 +1,189 @@
+From f5f7b53f04a2e52c6bf52ca6a4a1f7f2190f0240 Mon Sep 17 00:00:00 2001
+From: Armagidon <yt.armagidon.mc@gmail.com>
+Date: Fri, 14 Jul 2023 16:09:59 +0300
+Subject: [PATCH] Papyrus integration
+
+---
+ build.gradle.kts                              | 10 ++++---
+ .../clip/placeholderapi/PlaceholderAPI.java   | 15 ++++++++++-
+ .../manager/LocalExpansionManager.java        | 27 ++++++++++++++++---
+ src/main/resources/plugin.yml                 |  2 ++
+ 4 files changed, 47 insertions(+), 7 deletions(-)
+
+diff --git a/build.gradle.kts b/build.gradle.kts
+index ba02025..931b5ed 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -20,6 +20,8 @@ repositories {
+ 
+     maven("https://repo.codemc.org/repository/maven-public/")
+     maven("https://hub.spigotmc.org/nexus/content/repositories/snapshots/")
++
++    maven ("https://jitpack.io")
+ }
+ 
+ dependencies {
+@@ -34,12 +36,15 @@ dependencies {
+ 
+     testImplementation("org.junit.jupiter:junit-jupiter-engine:5.8.2")
+     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.8.1")
++
++
++    implementation("com.github.StumpStudio.Papyrus:papyrus-api:v0.2.1-alpha")
+ }
+ 
+ 
+ java {
+-    sourceCompatibility = JavaVersion.VERSION_1_8
+-    targetCompatibility = JavaVersion.VERSION_1_8
++    sourceCompatibility = JavaVersion.VERSION_17
++    targetCompatibility = JavaVersion.VERSION_17
+ 
+     withJavadocJar()
+     withSourcesJar()
+@@ -87,7 +92,6 @@ tasks {
+         archiveClassifier.set("")
+ 
+         relocate("org.bstats", "me.clip.placeholderapi.metrics")
+-        relocate("net.kyori", "me.clip.placeholderapi.libs.kyori")
+     }
+ 
+     test {
+diff --git a/src/main/java/me/clip/placeholderapi/PlaceholderAPI.java b/src/main/java/me/clip/placeholderapi/PlaceholderAPI.java
+index a5228db..683b016 100644
+--- a/src/main/java/me/clip/placeholderapi/PlaceholderAPI.java
++++ b/src/main/java/me/clip/placeholderapi/PlaceholderAPI.java
+@@ -25,6 +25,7 @@ import java.util.List;
+ import java.util.Locale;
+ import java.util.Map;
+ import java.util.Set;
++import java.util.function.Function;
+ import java.util.regex.Matcher;
+ import java.util.regex.Pattern;
+ import java.util.stream.Collectors;
+@@ -35,15 +36,27 @@ import me.clip.placeholderapi.replacer.CharsReplacer;
+ import me.clip.placeholderapi.replacer.Replacer;
+ import me.clip.placeholderapi.replacer.Replacer.Closure;
+ import me.clip.placeholderapi.util.Msg;
++import net.kyori.adventure.text.Component;
++import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+ import org.bukkit.OfflinePlayer;
+ import org.bukkit.entity.Player;
+ import org.bukkit.plugin.Plugin;
+ import org.jetbrains.annotations.ApiStatus;
+ import org.jetbrains.annotations.NotNull;
++import org.jetbrains.annotations.Nullable;
++import ru.armagidon.papyrus.PapyrusAPI;
++import ru.armagidon.papyrus.implementation.placeholder.SimplePlaceholderContext;
++import ru.armagidon.papyrus.placeholder.PlaceholderContext;
+ 
+ public final class PlaceholderAPI {
+ 
+-  private static final Replacer REPLACER_PERCENT = new CharsReplacer(Closure.PERCENT);
++  private static final Replacer REPLACER_PERCENT = (text, player, lookup) -> {
++    Component component = LegacyComponentSerializer.legacySection().deserialize(text);
++    PlaceholderContext context = SimplePlaceholderContext.builder()
++                    .viewer(player).build();
++    Component replacedComponent = PapyrusAPI.getApi().getGlobalParser().parse(context, component).join();
++    return LegacyComponentSerializer.legacySection().serialize(replacedComponent);
++  };
+   private static final Replacer REPLACER_BRACKET = new CharsReplacer(Closure.BRACKET);
+ 
+   private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("[%]([^%]+)[%]");
+diff --git a/src/main/java/me/clip/placeholderapi/expansion/manager/LocalExpansionManager.java b/src/main/java/me/clip/placeholderapi/expansion/manager/LocalExpansionManager.java
+index 80c785a..10b37b6 100644
+--- a/src/main/java/me/clip/placeholderapi/expansion/manager/LocalExpansionManager.java
++++ b/src/main/java/me/clip/placeholderapi/expansion/manager/LocalExpansionManager.java
+@@ -20,6 +20,7 @@
+ 
+ package me.clip.placeholderapi.expansion.manager;
+ 
++import com.google.common.base.Joiner;
+ import com.google.common.collect.ImmutableSet;
+ import com.google.common.collect.Sets;
+ import java.io.File;
+@@ -52,7 +53,10 @@ import me.clip.placeholderapi.expansion.cloud.CloudExpansion;
+ import me.clip.placeholderapi.util.FileUtil;
+ import me.clip.placeholderapi.util.Futures;
+ import me.clip.placeholderapi.util.Msg;
++import net.kyori.adventure.text.Component;
++import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+ import org.bukkit.Bukkit;
++import org.bukkit.OfflinePlayer;
+ import org.bukkit.command.CommandSender;
+ import org.bukkit.configuration.file.FileConfiguration;
+ import org.bukkit.event.EventHandler;
+@@ -65,6 +69,11 @@ import org.jetbrains.annotations.ApiStatus;
+ import org.jetbrains.annotations.NotNull;
+ import org.jetbrains.annotations.Nullable;
+ import org.jetbrains.annotations.Unmodifiable;
++import ru.armagidon.papyrus.PapyrusAPI;
++import ru.armagidon.papyrus.implementation.placeholder.LambdaPlaceholder;
++import ru.armagidon.papyrus.placeholder.PlaceholderContainer;
++import ru.armagidon.papyrus.placeholder.PlaceholderContext;
++import ru.armagidon.papyrus.placeholder.PlaceholderId;
+ 
+ public final class LocalExpansionManager implements Listener {
+ 
+@@ -179,7 +188,7 @@ public final class LocalExpansionManager implements Listener {
+       Objects.requireNonNull(expansion.getAuthor(), "The expansion author is null!");
+       Objects.requireNonNull(expansion.getIdentifier(), "The expansion identifier is null!");
+       Objects.requireNonNull(expansion.getVersion(), "The expansion version is null!");
+-      
++
+       if (expansion.getRequiredPlugin() != null && !expansion.getRequiredPlugin().isEmpty()) {
+         if (!Bukkit.getPluginManager().isPluginEnabled(expansion.getRequiredPlugin())) {
+           Msg.warn("Cannot load expansion %s due to a missing plugin: %s", expansion.getIdentifier(),
+@@ -187,7 +196,7 @@ public final class LocalExpansionManager implements Listener {
+           return Optional.empty();
+         }
+       }
+-      
++
+       if (!expansion.register()) {
+         Msg.warn("Cannot load expansion %s due to an unknown issue.", expansion.getIdentifier());
+         return Optional.empty();
+@@ -202,7 +211,7 @@ public final class LocalExpansionManager implements Listener {
+       } else {
+         reason = " - One of its properties is null which is not allowed!";
+       }
+-      
++
+       Msg.severe("Failed to load expansion class %s%s", ex, clazz.getSimpleName(), reason);
+     }
+ 
+@@ -216,6 +225,18 @@ public final class LocalExpansionManager implements Listener {
+     if (!expansion.canRegister()) {
+       return false;
+     }
++
++    LambdaPlaceholder placeholder = new LambdaPlaceholder(PlaceholderId.of("papi", identifier), context -> {
++      OfflinePlayer player = context.getPlaceholderContext().getContext(PlaceholderContext.VIEWER_KEY);
++      String params = Joiner.on('_').join(context.getParameters());
++      String rawOut = expansion.onRequest(player, params);
++      Optional<Component> output = Optional.ofNullable(rawOut).map(l -> LegacyComponentSerializer.legacySection().deserialize(l));
++      return CompletableFuture.completedFuture(output);
++    });
++
++    PlaceholderContainer scope = PlaceholderContainer.builder()
++            .registerPlaceholder(placeholder).build();
++    PapyrusAPI.getApi().getGlobalParser().registerSource(scope);
+     
+     if (expansions.containsKey(identifier)) {
+       Msg.warn("Failed to load expansion %s. Identifier is already in use.",
+diff --git a/src/main/resources/plugin.yml b/src/main/resources/plugin.yml
+index 077b274..d69b217 100644
+--- a/src/main/resources/plugin.yml
++++ b/src/main/resources/plugin.yml
+@@ -6,6 +6,8 @@ author: HelpChat
+ 
+ api-version: "1.13"
+ description: "An awesome placeholder provider!"
++depend:
++  - Papyrus
+ 
+ commands:
+   placeholderapi:
+-- 
+2.41.0
+
